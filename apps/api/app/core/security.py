@@ -1,32 +1,51 @@
-from passlib.context import CryptContext
-from jose import JWTError, jwt
+import os
+import base64
+import hashlib
+import hmac
 from datetime import datetime, timedelta
+
+from jose import jwt
 
 from app.core.settings import settings
 
-# Configuração de criptografia de senha
-
-pwd_context = CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto"
-)
-
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    salt = os.urandom(16)
+
+    key = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt,
+        100000,
+    )
+
+    return base64.b64encode(salt + key).decode("utf-8")
 
 
 def verify_password(
     plain_password: str,
     hashed_password: str
 ) -> bool:
-    return pwd_context.verify(
-        plain_password,
-        hashed_password
+
+    decoded = base64.b64decode(
+        hashed_password.encode("utf-8")
     )
 
+    salt = decoded[:16]
+    stored_key = decoded[16:]
 
-# JWT Token
+    new_key = hashlib.pbkdf2_hmac(
+        "sha256",
+        plain_password.encode("utf-8"),
+        salt,
+        100000,
+    )
+
+    return hmac.compare_digest(
+        stored_key,
+        new_key
+    )
+
 
 def create_access_token(
     data: dict,
@@ -42,7 +61,9 @@ def create_access_token(
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
 
-    to_encode.update({"exp": expire})
+    to_encode.update({
+        "exp": expire
+    })
 
     encoded_jwt = jwt.encode(
         to_encode,
